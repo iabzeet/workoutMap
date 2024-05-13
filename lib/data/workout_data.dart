@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:workout/data/hive_database.dart';
+import 'package:workout/datetime/date_time.dart';
 import 'package:workout/models/exercise.dart';
 import 'package:workout/models/workout.dart';
 
 class WorkoutData extends ChangeNotifier {
+  final db = HiveDatabase();
   /*
 
     WORKOUT DATA STRUCTURE
@@ -27,6 +30,21 @@ class WorkoutData extends ChangeNotifier {
     ),
   ];
 
+  //if there are workouts already in database, then get that workout list
+  //helpful when the user first opens the app in their lifetime
+   void initializeWorkoutList() {
+    if (db.previousDataExists()) {
+      workoutList = db.readFromDatabase();
+    }
+    //otherwise use default workouts
+    else {
+      db.saveToDatabase(workoutList);
+    }
+
+    //load heat map
+    loadHeatMap();
+   }
+
   //get the list of workouts
   List<Workout> getWorkoutList() {
     return workoutList;
@@ -45,6 +63,9 @@ class WorkoutData extends ChangeNotifier {
     workoutList.add(Workout(name: name, exercises: []));
 
     notifyListeners();
+
+    //save to database
+    db.saveToDatabase(workoutList);
   }
 
   //add an exercise to a workout
@@ -61,7 +82,9 @@ class WorkoutData extends ChangeNotifier {
           ),
         );
 
-        notifyListeners();
+    notifyListeners();
+    //save to database
+    db.saveToDatabase(workoutList);
   }
 
   //check off exercise
@@ -71,8 +94,13 @@ class WorkoutData extends ChangeNotifier {
 
     //check off boolean to show user completed the exercise
     relevantExercise.isCompleted = !relevantExercise.isCompleted;
+    print('tapped');
 
     notifyListeners();
+    //save to database
+    db.saveToDatabase(workoutList);
+    //load heat map
+    loadHeatMap();
   }
 
 
@@ -94,5 +122,51 @@ class WorkoutData extends ChangeNotifier {
         relevantWorkout.exercises.firstWhere((exercise) => exercise.name == exerciseName);
 
     return relevantExercise;
+  }
+
+  //get start date
+  String getStartDate() {
+    return db.getStartDate();
+  }
+
+  /*
+
+    HEAT MAP
+
+  */
+
+  Map<DateTime, int> heatMapDataset = {};
+
+  void loadHeatMap() {
+    DateTime startDate = createTimeObject(getStartDate());
+
+    //count the number of days to load
+    int daysInBetween = DateTime.now().difference(startDate).inDays;
+
+    //go from start date to today, and add each completion status to the dataset
+    //"COMPLETION_STATUS_yyyymmdd" will be the key in the database
+    for (int i=0; i<daysInBetween+1; i++) {
+      String yyyymmdd =
+          convertDateTimeToYYYYMMDD(startDate.add(Duration(days: i)));
+
+      //completion status = 0 or 1
+      int completionStatus = db.getCompletionStatus(yyyymmdd);
+
+      //year
+      int year = startDate.add(Duration(days: i)).year;
+
+      //month
+      int month = startDate.add(Duration(days: i)).month;
+
+      //day
+      int day = startDate.add(Duration(days: i)).day;
+
+      final percentForEachDay = <DateTime, int>{
+        DateTime(year, month, day): completionStatus
+      };
+
+      //add to the heat map dataset
+      heatMapDataset.addEntries(percentForEachDay.entries);
+    }
   }
 }
